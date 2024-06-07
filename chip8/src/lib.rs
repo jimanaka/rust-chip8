@@ -93,7 +93,118 @@ impl Emu {
     }
 
     fn execute (&mut self, opcode: u16) {
-        // TODO
+        let digit1 = (opcode & 0xF000) >> 12;
+        let digit2 = (opcode & 0x0F00) >> 8;
+        let digit3 = (opcode & 0x00F0) >> 4;
+        let digit4 = (opcode & 0x000F);
+
+        match (digit1, digit2, digit3, digit4) {
+            // NOP
+            (0, 0, 0, 0) => return,
+            // CLS - Clear Screen
+            (0, 0, 0xE, 0) => {
+                self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
+            },
+            // RET
+            (0, 0, 0xE, 0xE) => {
+                let ret_addr = self.pop();
+                self.pc = ret_addr;
+            },
+            // JMP
+            (1, _, _, _) => {
+                let addr = opcode & 0xFFF;
+                self.pc = addr;
+            },
+            // Call
+            (2, _, _, _) => {
+                let addr = opcode & 0xFFF;
+                self.push(self.pc);
+                self.pc = addr;
+            },
+            // SKIP VX == NN
+            (3, _, _, _) => {
+                let x = digit2 as usize;
+                let nn = (opcode & 0xFF) as u8;
+                if self.v_reg[x] == nn {
+                    self.pc +=2;
+                }
+            },
+            // SKIP VX != NN
+            (4, _, _, _) => {
+                let x = digit2 as usize;
+                let nn = (opcode & 0xFF) as u8;
+                if self.v_reg[x] != nn {
+                    self.pc +=2;
+                }
+            },
+            // SKIP VX = VY
+            (5, _, _, 0) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                if self.v_reg[x] == self.v_reg[y] {
+                    self.pc +=2;
+                }
+            },
+            // VX = NN
+            (6, _, _, _) => {
+                let x = digit2 as usize;
+                let nn = (opcode & 0xFF) as u8;
+                self.v_reg[x] = nn;
+            },
+            // VX += NN
+            (7, _, _, _) => {
+                let x = digit2 as usize;
+                let nn = (opcode & 0xFF) as u8;
+                self.v_reg[x] = self.v_reg[x].wrapping_add(nn);
+            },
+            // VY = NN
+            (8, _, _, 0) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                self.v_reg[x] = self.v_reg[y];
+            },
+            // VX |= VY
+            (8, _, _, 1) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                self.v_reg[x] |= self.v_reg[y];
+            },
+            // VX &= VY
+            (8, _, _, 2) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                self.v_reg[x] &= self.v_reg[y];
+            },
+            // VX ^= VY
+            (8, _, _, 3) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                self.v_reg[x] ^= self.v_reg[y];
+            },
+            // VX += VY
+            (8, _, _, 4) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+
+                let (new_vx, carry) = self.v_reg[x].overflowing_add(self.v_reg[y]);
+                let new_vf = if carry { 1 } else { 0 };
+
+                self.v_reg[x] = new_vx;
+                self.v_reg[0xF] = new_vf;
+            },
+            // VX -= VY
+            (8, _, _, 5) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+
+                let (new_vx, borrow) = self.v_reg[x].overflowing_sub(self.v_reg[y]);
+                let new_vf = if borrow { 0 } else { 1 };
+
+                self.v_reg[x] = new_vx;
+                self.v_reg[0xF] = new_vf;
+            }
+            (_, _, _, _) => unimplemented!("Unimplemented opcode: {}", opcode),
+        }
     }
 
     pub fn tick_timers(&mut self) {
